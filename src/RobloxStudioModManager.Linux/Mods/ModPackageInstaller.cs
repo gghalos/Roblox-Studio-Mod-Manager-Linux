@@ -60,6 +60,12 @@ public sealed class ModPackageInstaller
                 if (string.Equals(relative, "manifest.json", StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                if (relative.StartsWith("files/", StringComparison.OrdinalIgnoreCase))
+                    relative = relative[6..];
+
+                if (string.IsNullOrWhiteSpace(relative))
+                    continue;
+
                 var target = Path.GetFullPath(Path.Combine(staging, relative));
                 var root = Path.GetFullPath(staging) + Path.DirectorySeparatorChar;
                 if (!target.StartsWith(root, StringComparison.Ordinal))
@@ -87,7 +93,10 @@ public sealed class ModPackageInstaller
     private static string? NormalizeEntryPath(string path)
     {
         path = path.Replace('\\', '/').TrimStart('/');
-        if (string.IsNullOrWhiteSpace(path) || path.Contains("../", StringComparison.Ordinal) || path == ".." || path.Contains(':'))
+        if (string.IsNullOrWhiteSpace(path) ||
+            path.Contains("../", StringComparison.Ordinal) ||
+            path == ".." ||
+            path.Contains(':'))
             return null;
         return path;
     }
