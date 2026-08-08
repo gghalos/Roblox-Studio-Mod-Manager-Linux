@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using RobloxStudioModManager.Linux.Platform;
 
@@ -5,7 +6,8 @@ namespace RobloxStudioModManager.Linux.Mods;
 
 public sealed class ModManager
 {
-    private sealed record InstalledMod(string Name, string StudioVersion, List<string> Files);
+    private sealed record InstalledFile(string RelativePath, string InstalledSha256);
+    private sealed record InstalledMod(string Name, string StudioVersion, List<InstalledFile> Files);
     private sealed record ModState(List<InstalledMod> Installed);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -44,8 +46,10 @@ public sealed class ModManager
         if (!Directory.Exists(studioDirectory))
             throw new DirectoryNotFoundException($"Studio directory not found: {studioDirectory}");
 
-        var installedFiles = new List<string>();
+        var previous = LoadState().Installed.FirstOrDefault(x =>
+            string.Equals(x.Name, modName, StringComparison.OrdinalIgnoreCase));
         var backupRoot = Path.Combine(LinuxPaths.BackupsDirectory, SanitizeName(studioVersion), SanitizeName(modName));
+        var installedFiles = new List<InstalledFile>();
 
         foreach (var sourceFile in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
@@ -62,7 +66,7 @@ public sealed class ModManager
             }
 
             File.Copy(sourceFile, destination, overwrite: true);
-            installedFiles.Add(relative);
+            installedFiles.Add(new InstalledFile(relative, ComputeSha256(destination)));
         }
 
         var state = LoadState();
@@ -81,10 +85,14 @@ public sealed class ModManager
             throw new InvalidOperationException($"Mod is not installed: {modName}");
 
         var backupRoot = Path.Combine(LinuxPaths.BackupsDirectory, SanitizeName(installed.StudioVersion), SanitizeName(modName));
-        foreach (var relative in installed.Files)
+        foreach (var file in installed.Files)
         {
-            var destination = GetSafeDestination(studioDirectory, relative);
-            var backup = GetSafeDestination(backupRoot, relative);
+            var destination = GetSafeDestination(studioDirectory, file.RelativePath);
+            var backup = GetSafeDestination(backupRoot, file.RelativePath);
+
+            // Never silently destroy a user's changes made after the mod was applied.
+            if (File.Exists(destination) && !string.Equals(ComputeSha256(destination), file.InstalledSha256, StringComparison.OrdinalIgnoreCase))
+                continue;
 
             if (File.Exists(backup))
             {
@@ -126,6 +134,12 @@ public sealed class ModManager
         foreach (var c in Path.GetInvalidFileNameChars())
             value = value.Replace(c, '_');
         return value;
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     private static ModState LoadState()
