@@ -25,53 +25,31 @@ public sealed class MainWindow : Window
         MinHeight = 450;
         Background = Brush.Parse("#111318");
 
-        var root = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            Margin = new Thickness(24)
-        };
-
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
         var header = new StackPanel { Spacing = 6 };
-        header.Children.Add(new TextBlock
-        {
-            Text = "Roblox Studio Mod Manager",
-            FontSize = 28,
-            FontWeight = FontWeight.Bold,
-            Foreground = Brushes.White
-        });
+        header.Children.Add(new TextBlock { Text = "Roblox Studio Mod Manager", FontSize = 28, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
+        _studio.Foreground = Brush.Parse("#b8beca");
         header.Children.Add(_studio);
-        Grid.SetRow(header, 0);
         root.Children.Add(header);
 
-        var content = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            Margin = new Thickness(0, 20, 0, 20)
-        };
-
-        var toolbar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10
-        };
-        toolbar.Children.Add(Button("Install Mod", InstallModAsync));
-        toolbar.Children.Add(Button("Remove Selected", RemoveSelected));
-        toolbar.Children.Add(Button("Open Mods Folder", OpenModsFolder));
-        toolbar.Children.Add(Button("Refresh", Refresh));
-        toolbar.Children.Add(Button("Launch Studio", LaunchStudio));
+        var content = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 20, 0, 20) };
+        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        toolbar.Children.Add(MakeButton("Install Mod", InstallModAsync));
+        toolbar.Children.Add(MakeButton("Remove Selected", RemoveSelected));
+        toolbar.Children.Add(MakeButton("Open Mods Folder", OpenModsFolder));
+        toolbar.Children.Add(MakeButton("Refresh", Refresh));
+        toolbar.Children.Add(MakeButton("Launch Studio", LaunchStudio));
         content.Children.Add(toolbar);
 
         _modList.Margin = new Thickness(0, 14, 0, 14);
         _modList.Background = Brush.Parse("#191c22");
         _modList.Foreground = Brushes.White;
-        _modList.SelectionMode = SelectionMode.Single;
         Grid.SetRow(_modList, 1);
         content.Children.Add(_modList);
 
         _status.Foreground = Brush.Parse("#b8beca");
         Grid.SetRow(_status, 2);
         content.Children.Add(_status);
-
         Grid.SetRow(content, 1);
         root.Children.Add(content);
 
@@ -79,22 +57,11 @@ public sealed class MainWindow : Window
         Refresh();
     }
 
-    private Button Button(string text, Action action) => new()
+    private static Button MakeButton(string text, Action action)
     {
-        Content = text,
-        Padding = new Thickness(14, 8),
-        Command = new Avalonia.Input.RoutedCommand(text, typeof(MainWindow)),
-        Tag = action
-    };
-
-    protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        foreach (var button in this.GetVisualDescendants().OfType<Button>())
-        {
-            if (button.Tag is Action action)
-                button.Click += (_, _) => action();
-        }
+        var button = new Button { Content = text, Padding = new Thickness(14, 8) };
+        button.Click += (_, _) => action();
+        return button;
     }
 
     private void Refresh()
@@ -105,9 +72,8 @@ public sealed class MainWindow : Window
             : $"Studio: {installation.StudioExecutable}";
 
         _modList.ItemsSource = _mods.ListMods()
-            .Select(name => new ModEntry(name, _mods.IsInstalled(name) ? "Installed" : "Not installed"))
+            .Select(name => new ModEntry(name, _mods.IsInstalled(name) ? "Installed" : "Available"))
             .ToArray();
-
         _status.Text = $"Mods directory: {_mods.GetModsDirectory()}";
     }
 
@@ -120,56 +86,42 @@ public sealed class MainWindow : Window
                 Title = "Select a Roblox Studio mod folder",
                 AllowMultiple = false
             });
-
             var folder = folders.FirstOrDefault();
-            if (folder is null || string.IsNullOrWhiteSpace(folder.Path.LocalPath))
-                return;
+            if (folder is null || string.IsNullOrWhiteSpace(folder.Path.LocalPath)) return;
 
             var source = folder.Path.LocalPath;
             var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(name))
-                throw new InvalidOperationException("The selected folder needs a name.");
+            if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("The selected folder needs a name.");
 
             var destination = Path.Combine(_mods.GetModsDirectory(), name);
-            if (Directory.Exists(destination))
-                Directory.Delete(destination, true);
-
+            if (Directory.Exists(destination)) Directory.Delete(destination, true);
             CopyDirectory(source, destination);
 
             var installation = _detector.Detect();
             if (installation.StudioExecutable is null)
                 throw new InvalidOperationException("Roblox Studio was not found. Launch Vinegar once to install Studio.");
 
-            _mods.Install(name, Path.GetDirectoryName(installation.StudioExecutable)!, Path.GetFileName(Path.GetDirectoryName(installation.StudioExecutable)!));
+            var directory = Path.GetDirectoryName(installation.StudioExecutable)!;
+            _mods.Install(name, directory, Path.GetFileName(directory));
             _status.Text = $"Installed {name}.";
             Refresh();
         }
-        catch (Exception ex)
-        {
-            await ShowError(ex.Message);
-        }
+        catch (Exception ex) { await ShowError(ex.Message); }
     }
 
     private async void RemoveSelected()
     {
-        if (_modList.SelectedItem is not ModEntry entry)
-            return;
-
+        if (_modList.SelectedItem is not ModEntry entry || !_mods.IsInstalled(entry.Name)) return;
         try
         {
             var installation = _detector.Detect();
-            if (installation.StudioExecutable is null)
-                throw new InvalidOperationException("Roblox Studio was not found.");
-
+            if (installation.StudioExecutable is null) throw new InvalidOperationException("Roblox Studio was not found.");
             var directory = Path.GetDirectoryName(installation.StudioExecutable)!;
             _mods.Uninstall(entry.Name, directory, Path.GetFileName(directory));
             _status.Text = $"Removed {entry.Name}.";
             Refresh();
         }
-        catch (Exception ex)
-        {
-            await ShowError(ex.Message);
-        }
+        catch (Exception ex) { await ShowError(ex.Message); }
     }
 
     private void OpenModsFolder()
@@ -188,46 +140,31 @@ public sealed class MainWindow : Window
         try
         {
             var installation = _detector.Detect();
-            if (installation.StudioExecutable is null)
-                throw new InvalidOperationException("Roblox Studio was not found.");
-
+            if (installation.StudioExecutable is null) throw new InvalidOperationException("Roblox Studio was not found.");
             var directory = Path.GetDirectoryName(installation.StudioExecutable)!;
             foreach (var mod in _mods.ListInstalledMods())
                 _mods.Install(mod, directory, Path.GetFileName(directory));
-
             Hide();
             await VinegarLauncher.LaunchAsync(Array.Empty<string>());
             Show();
         }
-        catch (Exception ex)
-        {
-            await ShowError(ex.Message);
-        }
+        catch (Exception ex) { await ShowError(ex.Message); }
     }
 
     private async Task ShowError(string message)
     {
+        var ok = new Button { Content = "OK", HorizontalAlignment = HorizontalAlignment.Right };
         var dialog = new Window
         {
-            Title = "Mod Manager Error",
-            Width = 520,
-            Height = 220,
+            Title = "Mod Manager Error", Width = 520, Height = 220,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new StackPanel
             {
-                Margin = new Thickness(20),
-                Spacing = 16,
-                Children =
-                {
-                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
-                    new Button { Content = "OK", HorizontalAlignment = HorizontalAlignment.Right }
-                }
+                Margin = new Thickness(20), Spacing = 16,
+                Children = { new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, ok }
             }
         };
-
-        if (dialog.Content is StackPanel panel && panel.Children.Last() is Button ok)
-            ok.Click += (_, _) => dialog.Close();
-
+        ok.Click += (_, _) => dialog.Close();
         await dialog.ShowDialog(this);
     }
 
