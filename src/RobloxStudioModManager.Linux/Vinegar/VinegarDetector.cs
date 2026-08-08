@@ -22,7 +22,6 @@ public sealed class VinegarDetector
 
         if (!Directory.Exists(data))
         {
-            // Keep detection useful for non-default Flatpak setups.
             var fallback = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
             if (!string.IsNullOrWhiteSpace(fallback))
             {
@@ -34,7 +33,7 @@ public sealed class VinegarDetector
 
         var vinegarRoot = Path.Combine(data, "vinegar");
         var prefix = FindDirectory(vinegarRoot, "prefixes", "studio");
-        var executable = prefix is null ? null : FindFile(prefix, "RobloxStudioBeta.exe");
+        var executable = FindStudioExecutable(vinegarRoot);
 
         return new(true, data, prefix, executable);
     }
@@ -68,11 +67,19 @@ public sealed class VinegarDetector
         return Directory.Exists(exact) ? exact : null;
     }
 
-    private static string? FindFile(string root, string fileName)
+    private static string? FindStudioExecutable(string vinegarRoot)
     {
+        var versions = Path.Combine(vinegarRoot, "versions");
+        if (!Directory.Exists(versions))
+            return null;
+
         try
         {
-            return Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories).FirstOrDefault();
+            return Directory.EnumerateDirectories(versions, "version-*", SearchOption.TopDirectoryOnly)
+                .Select(directory => Path.Combine(directory, "RobloxStudioBeta.exe"))
+                .Where(File.Exists)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
         }
         catch (IOException)
         {
