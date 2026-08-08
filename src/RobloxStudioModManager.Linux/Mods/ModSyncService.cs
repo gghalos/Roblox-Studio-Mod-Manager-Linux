@@ -15,8 +15,14 @@ public sealed class ModSyncService
         if (installation.StudioExecutable is null)
             throw new InvalidOperationException("Roblox Studio is not installed in Vinegar.");
 
-        var studioDirectory = Path.GetDirectoryName(installation.StudioExecutable)!;
+        var studioDirectory = Path.GetDirectoryName(installation.StudioExecutable);
+        if (string.IsNullOrWhiteSpace(studioDirectory))
+            throw new InvalidOperationException("Unable to determine the Roblox Studio installation directory.");
+
         var studioVersion = Path.GetFileName(studioDirectory);
+        if (string.IsNullOrWhiteSpace(studioVersion))
+            throw new InvalidOperationException("Unable to determine the Roblox Studio version.");
+
         var markerDirectory = Path.Combine(installation.DataDirectory, "roblox-studio-mod-manager");
         var markerFile = Path.Combine(markerDirectory, "studio-version");
         Directory.CreateDirectory(markerDirectory);
