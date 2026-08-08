@@ -1,0 +1,11 @@
+{
+  "id": "better-explorer-icons",
+  "name": "Better Explorer Icons",
+  "version": "1.0.0-linux",
+  "author": "MaximumADHD",
+  "description": "Better Explorer icons port package for Roblox Studio Mod Manager on Linux/Vinegar.",
+  "enabled": false,
+  "source": "https://github.com/MaximumADHD/Roblox-Studio-Mod-Manager",
+  "license": "MIT",
+  "files": []
+}
