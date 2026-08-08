@@ -21,7 +21,7 @@ A Linux-native port of [Roblox Studio Mod Manager](https://github.com/MaximumADH
 Requirements:
 
 - Linux x86_64
-- .NET 8 SDK
+- .NET 10 SDK
 - Flatpak
 - Vinegar (`org.vinegarhq.Vinegar`)
 
