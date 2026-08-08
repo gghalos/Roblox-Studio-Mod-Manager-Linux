@@ -11,18 +11,21 @@ namespace RobloxStudioModManager.Linux;
 public sealed class MainWindow : Window
 {
     private readonly ModManager _mods = new();
+    private readonly ModPackageInstaller _packages;
     private readonly VinegarDetector _detector = new();
     private readonly ListBox _modList = new();
     private readonly TextBlock _status = new();
     private readonly TextBlock _studio = new();
+    private readonly TextBlock _details = new();
 
     public MainWindow()
     {
+        _packages = new ModPackageInstaller(_mods);
         Title = "Roblox Studio Mod Manager";
-        Width = 900;
-        Height = 600;
-        MinWidth = 700;
-        MinHeight = 450;
+        Width = 980;
+        Height = 650;
+        MinWidth = 760;
+        MinHeight = 480;
         Background = Brush.Parse("#111318");
 
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
@@ -32,22 +35,35 @@ public sealed class MainWindow : Window
         header.Children.Add(_studio);
         root.Children.Add(header);
 
-        var content = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 20, 0, 20) };
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("2*,3*"), RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 20, 0, 20) };
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         toolbar.Children.Add(MakeButton("Install Mod", InstallModAsync));
         toolbar.Children.Add(MakeButton("Remove Selected", RemoveSelected));
         toolbar.Children.Add(MakeButton("Open Mods Folder", OpenModsFolder));
         toolbar.Children.Add(MakeButton("Refresh", Refresh));
         toolbar.Children.Add(MakeButton("Launch Studio", LaunchStudio));
+        Grid.SetColumnSpan(toolbar, 2);
         content.Children.Add(toolbar);
 
-        _modList.Margin = new Thickness(0, 14, 0, 14);
+        _modList.Margin = new Thickness(0, 14, 14, 14);
         _modList.Background = Brush.Parse("#191c22");
         _modList.Foreground = Brushes.White;
+        _modList.SelectionChanged += (_, _) => UpdateDetails();
         Grid.SetRow(_modList, 1);
         content.Children.Add(_modList);
 
+        var detailsPanel = new StackPanel { Margin = new Thickness(14, 14, 0, 14), Spacing = 10 };
+        detailsPanel.Children.Add(new TextBlock { Text = "Mod details", FontSize = 20, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
+        _details.Text = "Select a mod to inspect it.";
+        _details.Foreground = Brush.Parse("#b8beca");
+        _details.TextWrapping = TextWrapping.Wrap;
+        detailsPanel.Children.Add(_details);
+        Grid.SetColumn(detailsPanel, 1);
+        Grid.SetRow(detailsPanel, 1);
+        content.Children.Add(detailsPanel);
+
         _status.Foreground = Brush.Parse("#b8beca");
+        Grid.SetColumnSpan(_status, 2);
         Grid.SetRow(_status, 2);
         content.Children.Add(_status);
         Grid.SetRow(content, 1);
@@ -72,38 +88,52 @@ public sealed class MainWindow : Window
             : $"Studio: {installation.StudioExecutable}";
 
         _modList.ItemsSource = _mods.ListMods()
-            .Select(name => new ModEntry(name, _mods.IsInstalled(name) ? "Installed" : "Available"))
+            .Select(name => new ModEntry(name, LoadManifest(name), _mods.IsInstalled(name)))
             .ToArray();
-        _status.Text = $"Mods directory: {_mods.GetModsDirectory()}";
+        _status.Text = $"Mods directory: {_mods.GetModsDirectory()}    •    Installed: {_mods.ListInstalledMods().Count}";
+        UpdateDetails();
+    }
+
+    private ModManifest? LoadManifest(string name)
+    {
+        try { return ModManifest.Load(Path.Combine(_mods.GetModsDirectory(), name)); }
+        catch { return null; }
+    }
+
+    private void UpdateDetails()
+    {
+        if (_modList.SelectedItem is not ModEntry entry)
+        {
+            _details.Text = "Select a mod to inspect it.";
+            return;
+        }
+
+        if (entry.Manifest is null)
+        {
+            _details.Text = $"{entry.Name}\n\nNo valid manifest.json was found. This mod can be kept in the library, but packaged installs should include a manifest.";
+            return;
+        }
+
+        _details.Text = $"{entry.Manifest.Name}\nVersion: {entry.Manifest.Version}\nAuthor: {entry.Manifest.Author}\nStatus: {(entry.Installed ? "Installed" : "Available")}\n\n{entry.Manifest.Description}";
     }
 
     private async void InstallModAsync()
     {
         try
         {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "Select a Roblox Studio mod folder",
-                AllowMultiple = false
+                Title = "Install Roblox Studio mod",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { new FilePickerFileType("Mod packages") { Patterns = new[] { "*.zip" } } }
             });
-            var folder = folders.FirstOrDefault();
-            if (folder is null || string.IsNullOrWhiteSpace(folder.Path.LocalPath)) return;
+            var file = files.FirstOrDefault();
+            if (file is null) return;
 
-            var source = folder.Path.LocalPath;
-            var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("The selected folder needs a name.");
-
-            var destination = Path.Combine(_mods.GetModsDirectory(), name);
-            if (Directory.Exists(destination)) Directory.Delete(destination, true);
-            CopyDirectory(source, destination);
-
-            var installation = _detector.Detect();
-            if (installation.StudioExecutable is null)
-                throw new InvalidOperationException("Roblox Studio was not found. Launch Vinegar once to install Studio.");
-
-            var directory = Path.GetDirectoryName(installation.StudioExecutable)!;
-            _mods.Install(name, directory, Path.GetFileName(directory));
-            _status.Text = $"Installed {name}.";
+            var path = file.Path.LocalPath;
+            var manifest = _packages.Inspect(path);
+            var installed = _packages.InstallPackage(path);
+            _status.Text = $"Installed {installed.Name} v{installed.Version}.";
             Refresh();
         }
         catch (Exception ex) { await ShowError(ex.Message); }
@@ -111,14 +141,14 @@ public sealed class MainWindow : Window
 
     private async void RemoveSelected()
     {
-        if (_modList.SelectedItem is not ModEntry entry || !_mods.IsInstalled(entry.Name)) return;
+        if (_modList.SelectedItem is not ModEntry entry || !entry.Installed) return;
         try
         {
             var installation = _detector.Detect();
             if (installation.StudioExecutable is null) throw new InvalidOperationException("Roblox Studio was not found.");
             var directory = Path.GetDirectoryName(installation.StudioExecutable)!;
             _mods.Uninstall(entry.Name, directory, Path.GetFileName(directory));
-            _status.Text = $"Removed {entry.Name}.";
+            _status.Text = $"Removed {entry.Name} from Studio.";
             Refresh();
         }
         catch (Exception ex) { await ShowError(ex.Message); }
@@ -168,20 +198,10 @@ public sealed class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    private static void CopyDirectory(string source, string destination)
+    private sealed record ModEntry(string Name, ModManifest? Manifest, bool Installed)
     {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(source, file);
-            var target = Path.Combine(destination, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, true);
-        }
-    }
-
-    private sealed record ModEntry(string Name, string State)
-    {
-        public override string ToString() => $"{Name}    —    {State}";
+        public override string ToString() => Manifest is null
+            ? $"{Name}    —    No manifest"
+            : $"{Manifest.Name}    v{Manifest.Version}    —    {(Installed ? "Installed" : "Available")}";
     }
 }
