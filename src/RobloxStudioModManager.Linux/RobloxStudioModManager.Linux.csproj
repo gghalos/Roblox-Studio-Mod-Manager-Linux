@@ -7,4 +7,9 @@
     <AssemblyName>roblox-studio-mod-manager</AssemblyName>
     <RootNamespace>RobloxStudioModManager.Linux</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.18" />
+  </ItemGroup>
 </Project>
