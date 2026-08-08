@@ -25,6 +25,7 @@ internal static class Program
         var detector = new VinegarDetector();
         var installation = detector.Detect();
         var modManager = new ModManager();
+        var sync = new ModSyncService(modManager);
 
         Console.WriteLine("Roblox Studio Mod Manager for Linux");
         Console.WriteLine();
@@ -41,7 +42,8 @@ internal static class Program
         Console.WriteLine($"Studio prefix: {installation.StudioPrefix ?? "not found"}");
         Console.WriteLine($"Studio executable: {installation.StudioExecutable ?? "not found"}");
 
-        if (args[0].Equals("launch", StringComparison.OrdinalIgnoreCase))
+        if (args[0].Equals("launch", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("sync", StringComparison.OrdinalIgnoreCase))
         {
             if (installation.StudioExecutable is null)
             {
@@ -49,13 +51,16 @@ internal static class Program
                 return 1;
             }
 
-            var studioDirectory = Path.GetDirectoryName(installation.StudioExecutable)!;
-            var studioVersion = Path.GetFileName(studioDirectory);
-            foreach (var mod in modManager.ListInstalledMods())
-            {
-                modManager.Install(mod, studioDirectory, studioVersion);
+            var result = sync.Sync(installation);
+            Console.WriteLine(result.VersionChanged
+                ? $"Studio update detected: {result.StudioVersion}"
+                : $"Studio version: {result.StudioVersion}");
+
+            foreach (var mod in result.AppliedMods)
                 Console.WriteLine($"Applied mod: {mod}");
-            }
+
+            if (args[0].Equals("sync", StringComparison.OrdinalIgnoreCase))
+                return 0;
 
             Console.WriteLine("Launching Studio through Vinegar...");
             return await VinegarLauncher.LaunchAsync(args.Skip(1));
@@ -85,6 +90,7 @@ internal static class Program
         Console.WriteLine("  roblox-studio-mod-manager");
         Console.WriteLine("  roblox-studio-mod-manager ui");
         Console.WriteLine("  roblox-studio-mod-manager launch");
+        Console.WriteLine("  roblox-studio-mod-manager sync");
         Console.WriteLine("  roblox-studio-mod-manager mods");
         Console.WriteLine("  roblox-studio-mod-manager mods-dir");
         Console.WriteLine("  roblox-studio-mod-manager install <mod>");
