@@ -10,10 +10,7 @@ public sealed class ModManager
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public ModManager()
-    {
-        LinuxPaths.EnsureDirectories();
-    }
+    public ModManager() => LinuxPaths.EnsureDirectories();
 
     public string GetModsDirectory() => LinuxPaths.ModsDirectory;
 
@@ -29,6 +26,14 @@ public sealed class ModManager
             .Cast<string>()
             .ToArray();
     }
+
+    public IReadOnlyList<string> ListInstalledMods() => LoadState().Installed
+        .Select(x => x.Name)
+        .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    public bool IsInstalled(string modName) => LoadState().Installed.Any(x =>
+        string.Equals(x.Name, modName, StringComparison.OrdinalIgnoreCase));
 
     public void Install(string modName, string studioDirectory, string studioVersion)
     {
@@ -50,11 +55,10 @@ public sealed class ModManager
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
 
-            if (File.Exists(destination))
+            if (File.Exists(destination) && !File.Exists(backup))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-                if (!File.Exists(backup))
-                    File.Copy(destination, backup);
+                File.Copy(destination, backup);
             }
 
             File.Copy(sourceFile, destination, overwrite: true);
@@ -76,8 +80,7 @@ public sealed class ModManager
         if (installed is null)
             throw new InvalidOperationException($"Mod is not installed: {modName}");
 
-        var backupRoot = Path.Combine(LinuxPaths.BackupsDirectory, SanitizeName(studioVersion), SanitizeName(modName));
-
+        var backupRoot = Path.Combine(LinuxPaths.BackupsDirectory, SanitizeName(installed.StudioVersion), SanitizeName(modName));
         foreach (var relative in installed.Files)
         {
             var destination = GetSafeDestination(studioDirectory, relative);
@@ -102,11 +105,9 @@ public sealed class ModManager
     {
         var fullRoot = Path.GetFullPath(LinuxPaths.ModsDirectory);
         var path = Path.GetFullPath(Path.Combine(fullRoot, modName));
-
         if (!path.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
             !string.Equals(path, fullRoot, StringComparison.Ordinal))
             throw new ArgumentException("Mod name resolves outside the mods directory.", nameof(modName));
-
         return path;
     }
 
@@ -114,11 +115,9 @@ public sealed class ModManager
     {
         var fullRoot = Path.GetFullPath(root);
         var path = Path.GetFullPath(Path.Combine(fullRoot, relative));
-
         if (!path.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
             !string.Equals(path, fullRoot, StringComparison.Ordinal))
             throw new InvalidOperationException("Mod contains a path outside its destination directory.");
-
         return path;
     }
 
@@ -145,8 +144,6 @@ public sealed class ModManager
         }
     }
 
-    private static void SaveState(ModState state)
-    {
+    private static void SaveState(ModState state) =>
         File.WriteAllText(LinuxPaths.StateFile, JsonSerializer.Serialize(state, JsonOptions));
-    }
 }
